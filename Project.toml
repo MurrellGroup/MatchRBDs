@@ -1,0 +1,13 @@
+name = "MatchRBDs"
+uuid = "b6f4254f-f885-4d03-a1e2-53023301cd63"
+authors = ["aronStalmarck <aron.stalmarck@gmail.com> and contributors"]
+version = "1.0.0-DEV"
+
+[compat]
+julia = "1"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]

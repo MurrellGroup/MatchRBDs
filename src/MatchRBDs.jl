@@ -1,6 +1,5 @@
 module MatchRBDs
     import BioStructures
-    import NextGenSeqUtils
     using Distances: euclidean
     using Plots
     

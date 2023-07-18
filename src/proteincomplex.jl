@@ -1,58 +1,59 @@
 struct ProteinChain
-    name::String
+    id::String
     sequence::String
-    coordinates::Matrix{Float64}
-    resids::Vector{String}
+    coords::Matrix{Float64}
 end
 
-# Do we want to keep disordered atoms or not?
-bioselector(at::BioStructures.AbstractAtom) = BioStructures.calphaselector(at) && !BioStructures.isdisorderedatom(at)
-
-function bioselector(res::BioStructures.AbstractResidue)
-    ats = BioStructures.collectatoms(res, BioStructures.calphaselector)
-    !isempty(ats) && bioselector(only(ats))
-end
-
-function ProteinChain(chain::BioStructures.Chain)
-    name = BioStructures.chainid(chain)
-    sequence = string(BioStructures.LongAA(chain, bioselector, gaps = false))
-    coordinates = BioStructures.coordarray(chain, bioselector)
-    ids = BioStructures.resid.(BioStructures.collectresidues(chain, bioselector))
-
-    @assert length(sequence) == size(coordinates, 2) "Sequence and coordinates are not the same length, they are $(length(sequence)) and $(size(coordinates, 2)) respectively."
-
-    return ProteinChain(name, sequence, coordinates, ids)
-end
-
-abstract type AbstractProteinComplex end
-
-struct UnprocessedComplex
+struct ProteinComplex
     name::String
     chains::Vector{ProteinChain}
 end
 
-UnprocessedComplex(struc::BioStructures.ProteinStructure) = UnprocessedComplex(struc.name, ProteinChain.(values(BioStructures.chains(struc))))
-
-struct ProcessedComplex
-    name::String
-    specialchain::ProteinChain
-    otherchains::Vector{ProteinChain}
+struct ComplexInstance
+    proteincomplex::ProteinComplex # shallow copy
+    specialchain_index::Int
 end
 
-function ProcessedComplex(struc::BioStructures.ProteinStructure, idofspecialchain::String)
-    otherchains = ProteinChain[ProteinChain(ch) for (chid, ch) in BioStructures.chains(struc) if chid != idofspecialchain]
-    specialchain = ProteinChain(struc[idofspecialchain])
-    return ProcessedComplex(struc.name, specialchain, otherchains)
+specialchain(instance::ComplexInstance) = instance.proteincomplex.chains[instance.specialchain_index]
+
+otherchains(instance::ComplexInstance) = ProteinChain[chain for (i, chain) in enumerate(instance.proteincomplex.chains) if i != instance.specialchain_index]
+
+# Matches
+
+struct ChainMatch
+    query::ProteinChain # shallow copy
+    target::ProteinChain # shallow copy
+    queryindices::Vector{Int}
+    targetindices::Vector{Int}
 end
 
-function showids(complex::ProcessedComplex)
-    println("Name: $(complex.name)")
-    println("Special chain: $(complex.specialchain.name)")
-    println("Other chains: $(join([chain.name for chain in complex.otherchains], ", "))")
+struct ComplexInstanceMatch
+    query::ComplexInstance
+    target::ComplexInstance
+    specialchainmatch::ChainMatch
+    otherchainmatches::Vector{ChainMatch}
 end
 
-chains(complex::ProcessedComplex) = vcat(complex.specialchain, complex.otherchains...)
+matchedcoords_query(chainmatch::ChainMatch) = chainmatch.query.coords[:, chainmatch.queryindices]
+matchedcoords_target(chainmatch::ChainMatch) = chainmatch.target.coords[:, chainmatch.targetindices]
 
-joincoords(chains::Vector{ProteinChain}) = hcat(map(chain -> chain.coordinates, chains)...)
+matchedcoords_query_otherchains(instancematch::ComplexInstanceMatch) = hcat([matchedcoords_query(matchedchain) for matchedchain in instancematch.otherchainmatches]...)
+matchedcoords_target_otherchains(instancematch::ComplexInstanceMatch) = hcat([matchedcoords_target(matchedchain) for matchedchain in instancematch.otherchainmatches]...)
 
-coordarray(complex::ProcessedComplex) = joincoords(chains(complex))
+function rmsd(instancematch::ComplexInstanceMatch)
+    
+    transformation = BioStructures.Transformation(matchedcoords_target(instancematch.specialchainmatch), matchedcoords_query(instancematch.specialchainmatch))
+
+    query_coords_otherchains = matchedcoords_query_otherchains(instancematch)
+    transformed_target_coords_otherchains = BioStructures.applytransform(matchedcoords_target_otherchains(instancematch), transformation)
+
+    return BioStructures.rmsd(query_coords_otherchains, transformed_target_coords_otherchains)
+end
+
+using Base: show
+
+function Base.show(x::ComplexInstanceMatch)
+    println("target name: ", x.target.proteincomplex.name)
+    println("specialchain: ", specialchain(x.target).id)
+    println("otherchains: ", [" "*ch.id for ch in otherchains(x.target)]...)
+end

@@ -1,83 +1,70 @@
+num_alignment_queries = 0
 
-# FIXME: Try choosing the min subset. Perhaps that will be better.
-function yeet_edges(short_seq::String, long_seq::String)
-    left_edge = 1 + (length(short_seq) - length(lstrip(short_seq, '-')))
-    right_edge = length(rstrip(short_seq, '-'))
+function alignabletargetinstances!(chainmatches, chaininds, query, target, minimum_otherchain_alignmentscore)
+    # Base case
+    if length(chaininds) == length(query.proteincomplex.chains)
+        targetinstance = ComplexInstance(target, chaininds[1])
+        complexinstancematch = ComplexInstanceMatch(query, targetinstance, chainmatches[(specialchain(query).id, specialchain(targetinstance).id)].chainmatch, Vector{ChainMatch}())
 
-    return short_seq[left_edge:right_edge], long_seq[left_edge:right_edge]
-end
-
-function yeet_all_edges(seq1, seq2) # currently not used
-    seq1, seq2 = yeet_edges(seq1, seq2)
-    seq2, seq1 = yeet_edges(seq2, seq1)
-
-    return seq1, seq2
-end
-
-struct Alignment
-    originalquery::String
-    originaltarget::String
-    alignedquery::String
-    alignedtarget::String    
-end
-
-Alignment(; query::String, target::String) = Alignment(query, target, yeet_all_edges(NextGenSeqUtils_affine_nw_align(query, target)...)...)
-
-nummatches(alignment::Alignment) = count(x -> x[1] == x[2], zip(alignment.alignedquery, alignment.alignedtarget))
-
-alignmentscore(alignment::Alignment) = nummatches(alignment) / length(alignment.alignedquery)
-
-alignmentscore(target::ProteinChain, query::ProteinChain) = alignmentscore(Alignment(query = query.sequence, target = target.sequence))
-
-isalignable(alignment::Alignment; minalignmentscore = 0.3, minalignmentsizefactor = 0.45) = alignmentscore(alignment) >= minalignmentscore && length(alignment.alignedquery) > length(alignment.originalquery) * minalignmentsizefactor
-
-isalignable(target::ProteinChain, query::ProteinChain; minalignmentscore = 0.3) = isalignable(Alignment(query = query.sequence, target = target.sequence); minalignmentscore = minalignmentscore)
-
-# This method is sketchy. It doesn't check alignability for the entire complex, just for the special chain
-isalignable(target::UnprocessedComplex, query::ProcessedComplex; minalignmentscore = 0.3) = any(isalignable(target_chain, query.specialchain; minalignmentscore = minalignmentscore) for target_chain in target.chains)
-
-alignable_targets_in_pdb(query::ProcessedComplex; specialchain_minmatch = 0.3) = filter(target -> isalignable(target, query; minalignmentscore = specialchain_minmatch), loadentirepdb())
-
-function alignabletargetinstances(choseninds::Vector{Int}, specialchain::ProteinChain, target::UnprocessedComplex, query::ProcessedComplex; otherchains_minmatch::Real = 0.3)
-    length(choseninds) == length(query.otherchains) && return [deepcopy(ProcessedComplex(target.name, specialchain, target.chains[choseninds]))]
-
-    targetinstances = ProcessedComplex[]
-    for (i, targetchain) in enumerate(target.chains)
-        i ∉ choseninds || continue # could optimize this by using a Set instead of a Vector
-        targetchain != specialchain || continue
-        isalignable(targetchain, query.otherchains[length(choseninds) + 1], minalignmentscore = otherchains_minmatch) || continue
-
-        append!(targetinstances, alignabletargetinstances(vcat(choseninds, [i]), specialchain, target, query, otherchains_minmatch = otherchains_minmatch)) # Could optimize this by making a tree instead of using vcat, but that's a lot of work
+        for (querychain, targetchain) in zip(otherchains(query), target.chains[chaininds[2:end]])
+            push!(complexinstancematch.otherchainmatches, chainmatches[(querychain.id, targetchain.id)].chainmatch)
+        end
+        return [complexinstancematch]
     end
-    return targetinstances
-end
+        
+    # DFS
+    complexinstancematches = Vector{ComplexInstanceMatch}()
+    for i in setdiff(eachindex(target.chains), chaininds)
 
-function alignabletargetinstances(target::UnprocessedComplex, query::ProcessedComplex; specialchain_minmatch::Real = 0.3, otherchains_minmatch::Real = 0.3) # TODO
-    targetinstances = ProcessedComplex[]
-    for specialchain in target.chains
-        isalignable(specialchain, query.specialchain, minalignmentscore = specialchain_minmatch) || continue
+        targetchain = target.chains[i]
+        querychain = otherchains(query)[length(chaininds)]
 
-        append!(targetinstances, alignabletargetinstances(Int[], specialchain, target, query, otherchains_minmatch = otherchains_minmatch))
+        key = (querychain.id, targetchain.id)
+        val = get!(chainmatches, key, align(querychain, targetchain, minimum_otherchain_alignmentscore))
+        
+        val.isalignable || continue
+
+        append!(complexinstancematches, alignabletargetinstances!(chainmatches, vcat(chaininds, i), query, target, minimum_otherchain_alignmentscore))
     end
-    return targetinstances
+    return complexinstancematches
 end
 
-alignabletargetinstances(targets::Vector{UnprocessedComplex}, query::ProcessedComplex; specialchain_minmatch::Real = 0.3, otherchains_minmatch::Real = 0.3) = vcat(Vector{ProcessedComplex}[alignabletargetinstances(target, query, specialchain_minmatch = specialchain_minmatch, otherchains_minmatch = otherchains_minmatch) for target in targets]...)
+function alignabletargetinstances(query::ComplexInstance, target::ProteinComplex; minimum_specialchain_alignmentscore = 0.3, minimum_otherchain_alignmentscore = 0.3)
+    complexinstancematches = Vector{ComplexInstanceMatch}()
 
-function matchedindices(queryseq::String, targetseq::String)
-    query, target = NextGenSeqUtils_affine_nw_align(queryseq, targetseq) # We don't want to use the yeet_edges function here because we want to index into the original sequences, not the aligned ones
+    chainmatches = Dict{Tuple{String, String}, NamedTuple{(:isalignable, :chainmatch), Tuple{Bool, ChainMatch}}}()
+    
+    for (specialchain_index, targetspecialchain) in enumerate(target.chains)
+        key = (specialchain(query).id, targetspecialchain.id)
+        val = get!(chainmatches, key, align(specialchain(query), targetspecialchain, minimum_specialchain_alignmentscore))
+        
+        val.isalignable || continue
 
+        append!(complexinstancematches, alignabletargetinstances!(chainmatches, [specialchain_index], query, target, minimum_otherchain_alignmentscore))
+    end
+
+    # This is ugly. Shouldn't be here
+    #best_complexinstancematch = argmin(rmsd, complexinstancematches)
+
+    #return [best_complexinstancematch]
+    global num_alignment_queries += length(chainmatches)
+    
+    return complexinstancematches
+end
+
+
+alignabletargetinstances(query::ComplexInstance, targets::Vector{ProteinComplex}; minimum_specialchain_alignmentscore = 0.3, minimum_otherchain_alignmentscore = 0.3) = vcat(Vector{ComplexInstanceMatch}[alignabletargetinstances(query, target, minimum_specialchain_alignmentscore = minimum_specialchain_alignmentscore, minimum_otherchain_alignmentscore = minimum_otherchain_alignmentscore) for target in targets]...)
+
+function matchedindices(aligned_queryseq::String, aligned_targetseq::String)
     queryindices = Int[]
     targetindices = Int[]
 
     query_index = 1
     target_index = 1
 
-    for (q, t) in zip(query, target)
-        if q == t
-            push!(queryindices, query_index)
-            push!(targetindices, target_index)
-        end
+    for (q, t) in zip(aligned_queryseq, aligned_targetseq)
+
+        q == t && (push!(queryindices, query_index); push!(targetindices, target_index))
 
         query_index += q != '-'
         target_index += t != '-'
@@ -86,46 +73,25 @@ function matchedindices(queryseq::String, targetseq::String)
     return queryindices, targetindices
 end
 
-matchedindices(query::ProteinChain, target::ProteinChain) = matchedindices(query.sequence, target.sequence)
+function alignmentscore(aligned_query::String, aligned_target::String)
 
-function matchedindices(query::Vector{ProteinChain}, target::Vector{ProteinChain})
-    queryindices = Int[]
-    targetindices = Int[]
+    num_matches = count(i -> aligned_query[i] == aligned_target[i], eachindex(aligned_query))
+    
+    firstnongap = maximum((seq -> findfirst(!=('-'), seq)).([aligned_query, aligned_target]))
+    lastnongap = minimum((seq -> findprev(!=('-'), seq, lastindex(seq))).([aligned_query, aligned_target]))
 
-    q_offset = 0
-    t_offset = 0
-    for (querychain, targetchain) in zip(query, target)
-        queryindices_, targetindices_ = matchedindices(querychain, targetchain)
-        append!(queryindices, queryindices_ .+ q_offset)
-        append!(targetindices, targetindices_ .+ t_offset)
+    alignmentsize_noedgegaps = 1 + (lastnongap - firstnongap)
 
-        q_offset += length(querychain.sequence)
-        t_offset += length(targetchain.sequence)
-    end
-
-    return queryindices, targetindices
+    return num_matches / alignmentsize_noedgegaps
 end
 
-# We are not just concatenating the sequences and then calling matchedindices, because we want to make sure to align the chains in the query to the their corresponding chains in the target
-# Perhaps we shouldn't call it query and target since it doesn't really matter which is which
-function matchedcoords(query::ProteinChain, target::ProteinChain)
-    queryindices, targetindices = matchedindices(query, target)
-    return query.coordinates[:, queryindices], target.coordinates[:, targetindices]
+function align(query::ProteinChain, target::ProteinChain, minalignmentscore::Float64)
+    aligned_query, aligned_target = NextGenSeqUtils_affine_nw_align(query.sequence, target.sequence)
+
+    query_indices, target_indices = matchedindices(aligned_query, aligned_target)
+
+    return (isalignable = alignmentscore(aligned_query, aligned_target) >= minalignmentscore, chainmatch = ChainMatch(query, target, query_indices, target_indices))
 end
-
-# Perhaps we shouldn't call it query and target since it doesn't really matter which is which
-function matchedcoords(query::Vector{ProteinChain}, target::Vector{ProteinChain})
-    queryindices, targetindices = matchedindices(query, target)
-
-    querycoords = joincoords(query)[:, queryindices]
-    targetcoords = joincoords(target)[:, targetindices]
-
-    return querycoords, targetcoords
-end
-
-
-
-
 
 function NextGenSeqUtils_affine_nw_align(s1::String, s2::String;
     gap_open = -2.0,
@@ -157,7 +123,7 @@ function NextGenSeqUtils_affine_nw_align(s1::String, s2::String;
     traceM[1,:] .+= 3 
     traceM[2:end,1] .+= 2
     
-    traceIX[1,:] .+= 3 
+    traceIX[1,:] .+= 3
     traceIY[2:end,1] .+= 2
     
     traceIY[1,:] .+= 3 

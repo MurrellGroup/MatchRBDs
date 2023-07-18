@@ -1,16 +1,45 @@
-findmatches(struc::BioStructures.ProteinStructure, chainidofspecialchain::String; specialchain_minmatch::Real = 0.3, otherchains_minmatch::Real = 0.3, maxrmsd = 50.0) = 
-    threshold_rmsd(ProcessedComplex(struc, chainidofspecialchain), specialchain_minmatch = specialchain_minmatch, otherchains_minmatch = otherchains_minmatch, maxrmsd = maxrmsd)
-
-findmatches(pathtopdbfile::String, chainidofspecialchain::String; specialchain_minmatch::Real = 0.3, otherchains_minmatch::Real = 0.3, maxrmsd = 50.0) = 
-    findmatches(BioStructures.read(pathtopdbfile, BioStructures.PDB, structure_name = split(splitpath(pathtopdbfile)[end], ".")[1]), chainidofspecialchain, specialchain_minmatch = specialchain_minmatch, otherchains_minmatch = otherchains_minmatch, maxrmsd = maxrmsd)
-
-function findbestmatch(struc::BioStructures.ProteinStructure, chainidofspecialchain::String; specialchain_minmatch::Real = 0.3, otherchains_minmatch::Real = 0.3, maxrmsd::Real = Inf, outputfile::Union{String, Nothing} = nothing)
-    answer = minimum_rmsd(ProcessedComplex(struc, chainidofspecialchain), specialchain_minmatch = specialchain_minmatch, otherchains_minmatch = otherchains_minmatch, maxrmsd = maxrmsd)
+function findmatches(query::ComplexInstance; num_rand_kmers = 20, k = 6)
+    @time "I/O" begin
+        df = DataFrames.DataFrame(Arrow.Table(path_to_dataset))
+        BAs_in_pdb = load_proteincomplexes(df)
+        @info "Number of BAs in dataset: " length(BAs_in_pdb)
+    end
     
-    isnothing(outputfile) || open(io->writermsdanswer(io, answer), outputfile, "w")
+    @time "Kmer filter" begin
+        kmerset = kmers(specialchain(query).sequence, k)
 
-    return answer
+        rand_kmers = Set([pop!(kmerset, rand(kmerset)) for _ in 1:min(num_rand_kmers, length(kmerset))])
+
+        filter!(BAs_in_pdb) do BA
+            any(BA.chains) do ch
+                any(kmer ∈ rand_kmers for kmer in kmers(ch.sequence, k))
+            end
+        end
+        @info "Number of BAs after kmer filter: " length(BAs_in_pdb)
+    end
+
+    @time "BA chaincount filter" begin
+        filter!(BAs_in_pdb) do BA
+            length(BA.chains) >= length(query.proteincomplex.chains)
+        end
+        @info "Number of BAs after size filter: " length(BAs_in_pdb)
+    end
+
+    @time "Alignment" begin
+        matchedtargetinstances = alignabletargetinstances(query, BAs_in_pdb)
+        @info "Number of possible matches: " length(matchedtargetinstances)
+    end
+
+    @time "Superimposition and rmsd calculation" begin
+        matches = [(rmsd = rmsd(x), match = x) for x in matchedtargetinstances]
+    end
+
+    @time "Result sorting" begin
+        sort!(matches, by = x -> x.rmsd)
+    end
+
+    global num_alignment_queries
+    @info "Number of alignment_queries" num_alignment_queries
+
+    return matches
 end
-
-findbestmatch(pathtopdbfile::String, chainidofspecialchain::String; specialchain_minmatch::Real = 0.3, otherchains_minmatch::Real = 0.3, maxrmsd = Inf, outputfile = nothing) =
-    findbestmatch(BioStructures.read(pathtopdbfile, BioStructures.PDB, structure_name = first(split(splitpath(pathtopdbfile)[end], "."))), chainidofspecialchain, specialchain_minmatch = specialchain_minmatch, otherchains_minmatch = otherchains_minmatch, maxrmsd = maxrmsd, outputfile = outputfile)

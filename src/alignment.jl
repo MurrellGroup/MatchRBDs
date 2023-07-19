@@ -46,7 +46,6 @@ function alignabletargetinstances(query::ComplexInstance, target::ProteinComplex
     # This is ugly. Shouldn't be here
     #best_complexinstancematch = argmin(rmsd, complexinstancematches)
 
-    @show collect(keys(chainmatches))
     #return [best_complexinstancematch]
     global num_alignment_queries += length(chainmatches)
 

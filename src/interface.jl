@@ -4,7 +4,14 @@ function findmatches(query::ComplexInstance; num_rand_kmers = 20, k = 6)
         BAs_in_pdb = load_proteincomplexes(df)
         @info "Number of BAs in dataset: " length(BAs_in_pdb)
     end
-    
+
+    @time "BA chaincount filter" begin
+        filter!(BAs_in_pdb) do BA
+            length(BA.chains) >= length(query.proteincomplex.chains)
+        end
+        @info "Number of BAs after size filter: " length(BAs_in_pdb)
+    end
+
     @time "Kmer filter" begin
         kmerset = kmers(specialchain(query).sequence, k)
 
@@ -16,13 +23,6 @@ function findmatches(query::ComplexInstance; num_rand_kmers = 20, k = 6)
             end
         end
         @info "Number of BAs after kmer filter: " length(BAs_in_pdb)
-    end
-
-    @time "BA chaincount filter" begin
-        filter!(BAs_in_pdb) do BA
-            length(BA.chains) >= length(query.proteincomplex.chains)
-        end
-        @info "Number of BAs after size filter: " length(BAs_in_pdb)
     end
 
     @time "Alignment" begin

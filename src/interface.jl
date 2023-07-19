@@ -1,4 +1,4 @@
-function findmatches(query::ComplexInstance; num_rand_kmers = 20, k = 6)
+function findmatches(query::ComplexInstance; num_rand_kmers = 20, k = 6, path_to_dataset = path_to_dataset)
     @time "I/O" begin
         df = DataFrames.DataFrame(Arrow.Table(path_to_dataset))
         BAs_in_pdb = load_proteincomplexes(df)

@@ -2,15 +2,15 @@ function findmatches(query::ComplexInstance; num_rand_kmers = 20, k = 6)
     @time "I/O" begin
         df = DataFrames.DataFrame(Arrow.Table(path_to_dataset))
         BAs_in_pdb = load_proteincomplexes(df)
-        @info "Number of BAs in dataset: " length(BAs_in_pdb)
     end
+    @info "Number of BAs in dataset: " length(BAs_in_pdb)
 
     @time "BA chaincount filter" begin
         filter!(BAs_in_pdb) do BA
             length(BA.chains) >= length(query.proteincomplex.chains)
         end
-        @info "Number of BAs after size filter: " length(BAs_in_pdb)
     end
+    @info "Number of BAs after size filter: " length(BAs_in_pdb)
 
     @time "Kmer filter" begin
         kmerset = kmers(specialchain(query).sequence, k)
@@ -22,13 +22,16 @@ function findmatches(query::ComplexInstance; num_rand_kmers = 20, k = 6)
                 any(kmer ∈ rand_kmers for kmer in kmers(ch.sequence, k))
             end
         end
-        @info "Number of BAs after kmer filter: " length(BAs_in_pdb)
     end
+    @info "Number of BAs after kmer filter: " length(BAs_in_pdb)
 
     @time "Alignment" begin
         matchedtargetinstances = alignabletargetinstances(query, BAs_in_pdb)
-        @info "Number of possible matches: " length(matchedtargetinstances)
     end
+    @info "Number of possible matches: " length(matchedtargetinstances)
+    global num_alignment_queries
+    @info "Number of alignment_queries" num_alignment_queries
+
 
     @time "Superimposition and rmsd calculation" begin
         matches = [(rmsd = rmsd(x), match = x) for x in matchedtargetinstances]
@@ -38,8 +41,7 @@ function findmatches(query::ComplexInstance; num_rand_kmers = 20, k = 6)
         sort!(matches, by = x -> x.rmsd)
     end
 
-    global num_alignment_queries
-    @info "Number of alignment_queries" num_alignment_queries
+    
 
     return matches
 end

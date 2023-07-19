@@ -46,9 +46,10 @@ function alignabletargetinstances(query::ComplexInstance, target::ProteinComplex
     # This is ugly. Shouldn't be here
     #best_complexinstancematch = argmin(rmsd, complexinstancematches)
 
+    @show collect(keys(chainmatches))
     #return [best_complexinstancematch]
     global num_alignment_queries += length(chainmatches)
-    
+
     return complexinstancematches
 end
 
@@ -141,15 +142,15 @@ function NextGenSeqUtils_affine_nw_align(s1::String, s2::String;
             IX2M = IX[i-1, j-1] + diag_cost
             IY2M = IY[i-1, j-1] + diag_cost
             
-            M[i,j],traceM[i,j] = findmax([diagM,IX2M,IY2M]) #1: stay in M. 2: come from IX. 3: come from IY
+            M[i,j],traceM[i,j] = findmax((diagM,IX2M,IY2M)) #1: stay in M. 2: come from IX. 3: come from IY
             
             M2IX = M[i-1, j] + gap_open
             IXextend = IX[i-1, j] + gap_extend
-            IX[i,j],traceIX[i,j] = findmax([M2IX,IXextend]) #1: gap open. 2: gap extend
+            IX[i,j],traceIX[i,j] = findmax((M2IX,IXextend)) #1: gap open. 2: gap extend
             
             M2IY = M[i, j-1] + gap_open
             IYextend = IY[i, j-1] + gap_extend
-            IY[i,j],traceIY[i,j] = findmax([M2IY,-Inf,IYextend]) #1: gap open. 3: gap extend
+            IY[i,j],traceIY[i,j] = findmax((M2IY,-Inf,IYextend)) #1: gap open. 3: gap extend
               
         end
     end

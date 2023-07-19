@@ -52,8 +52,9 @@ end
 
 using Base: show
 
-function Base.show(x::ComplexInstanceMatch)
-    println("target name: ", x.target.proteincomplex.name)
-    println("specialchain: ", specialchain(x.target).id)
-    println("otherchains: ", [" "*ch.id for ch in otherchains(x.target)]...)
+function Base.show(io::IO, x::ComplexInstanceMatch)
+    print(io, "ComplexMatch( ")
+    print(io, "target name: ", x.target.proteincomplex.name, ", ")
+    print(io, "specialchain: ", x.specialchainmatch.target.id, ", ")
+    print(io, "otherchains: ", [" "*m.target.id for m in x.otherchainmatches]..., " )")
 end

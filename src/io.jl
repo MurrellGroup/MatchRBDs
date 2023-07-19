@@ -14,11 +14,14 @@ end
 function ProteinChain(chain::BioStructures.Chain)
     name = BioStructures.chainid(chain)
     sequence = string(BioStructures.LongAA(chain, bioselector, gaps = false))
+
     coordinates = BioStructures.coordarray(chain, bioselector)
-    
+
     @assert length(sequence) == size(coordinates, 2) "Sequence and coordinates are not the same length, they are $(length(sequence)) and $(size(coordinates, 2)) respectively."
 
-    return ProteinChain(name, sequence, coordinates)
+    mask = collect(sequence) .!= '-'
+
+    return ProteinChain(name, join(collect(sequence)[mask]), coordinates[:, mask])
 end
 
 ProteinComplex(struc::BioStructures.ProteinStructure) = ProteinComplex(struc.name, ProteinChain[ProteinChain(ch) for ch in values(BioStructures.chains(struc))])
@@ -63,14 +66,20 @@ end
 load_proteincomplexes(df::DataFrames.DataFrame) = ProteinComplex[load_proteincomplex(g) for g in DataFrames.groupby(df, :BAid)]
     
 function generate_dataset(PDB_entries::Vector{Tuple{String, Vector{Int}}}; outfile = path_to_dataset, pdbentrydir = path_to_pdb_dir, overwrite = true)
-    BAs = Vector{BioStructures.ProteinStructure}()
+    df = nothing
 
     for (pdbid, ba_numbers) in PDB_entries, ba_number in ba_numbers
         try
-            push!(BAs, BioStructures.retrievepdb(pdbid, ba_number = ba_number, structure_name = "$(pdbid)_$(ba_number)", dir = pdbentrydir, overwrite = overwrite, read_het_atoms = false, remove_disorder = true))
+            BA = BioStructures.retrievepdb(pdbid, ba_number = ba_number, structure_name = "$(pdbid)_$(ba_number)", dir = pdbentrydir, overwrite = overwrite, read_het_atoms = false, remove_disorder = true)
+            if isnothing(df)
+                df = DataFrames.DataFrame([BA])
+            else
+                df = vcat(df, DataFrames.DataFrame([BA]))
+            end
         catch
             @info "Not able to retrieve $(pdbid)_$(ba_number)"
         end
+        GC.gc()
     end
-    Arrow.write(outfile, DataFrames.DataFrame(BAs))
+    Arrow.write(outfile, df)
 end

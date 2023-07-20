@@ -73,16 +73,27 @@ function matchedindices(aligned_queryseq::String, aligned_targetseq::String)
     return queryindices, targetindices
 end
 
+function yeet_edges(short_seq::String, long_seq::String)
+    left_edge = 1 + (length(short_seq) - length(lstrip(short_seq, '-')))
+    right_edge = length(rstrip(short_seq, '-'))
+
+    return short_seq[left_edge:right_edge], long_seq[left_edge:right_edge]
+end
+
+function yeet_all_edges(seq1, seq2) # currently not used
+    seq1, seq2 = yeet_edges(seq1, seq2)
+    seq2, seq1 = yeet_edges(seq2, seq1)
+
+    return seq1, seq2
+end
+
 function alignmentscore(aligned_query::String, aligned_target::String)
 
     num_matches = count(i -> aligned_query[i] == aligned_target[i], eachindex(aligned_query))
     
-    firstnongap = maximum((seq -> findfirst(!=('-'), seq)).([aligned_query, aligned_target]))
-    lastnongap = minimum((seq -> findprev(!=('-'), seq, lastindex(seq))).([aligned_query, aligned_target]))
+    query_noedgegaps, target_noedgegaps = yeet_all_edges(aligned_query, aligned_target)
 
-    alignmentsize_noedgegaps = 1 + (lastnongap - firstnongap)
-
-    return num_matches / alignmentsize_noedgegaps
+    return num_matches / length(query_noedgegaps)
 end
 
 function align(query::ProteinChain, target::ProteinChain, minalignmentscore::Float64)

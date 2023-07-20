@@ -65,9 +65,10 @@ end
 
 load_proteincomplexes(df::DataFrames.DataFrame) = ProteinComplex[load_proteincomplex(g) for g in DataFrames.groupby(df, :BAid)]
     
-function generate_dataset(PDB_entries::Vector{Tuple{String, Vector{Int}}}; outfile = path_to_dataset, pdbentrydir = path_to_pdb_dir, overwrite = true)
+function generate_dataset(PDB_entries::Vector{Tuple{String, Vector{Int}}}; outfile = path_to_dataset, pdbentrydir = path_to_pdb_dir, overwrite = true, iterations_per_gc = 100)
     df = nothing
 
+    i = 1
     for (pdbid, ba_numbers) in PDB_entries, ba_number in ba_numbers
         try
             BA = BioStructures.retrievepdb(pdbid, ba_number = ba_number, structure_name = "$(pdbid)_$(ba_number)", dir = pdbentrydir, overwrite = overwrite, read_het_atoms = false, remove_disorder = true)
@@ -79,7 +80,9 @@ function generate_dataset(PDB_entries::Vector{Tuple{String, Vector{Int}}}; outfi
         catch
             @info "Not able to retrieve $(pdbid)_$(ba_number)"
         end
-        GC.gc()
+
+        i % iterations_per_gc == 0 && GC.gc()
+        i += 1
     end
     Arrow.write(outfile, df)
 end

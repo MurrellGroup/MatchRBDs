@@ -96,12 +96,12 @@ function alignmentscore(aligned_query::String, aligned_target::String)
     return num_matches / length(query_noedgegaps)
 end
 
-function align(query::ProteinChain, target::ProteinChain, minalignmentscore::Float64)
+function align(query::ProteinChain, target::ProteinChain, minalignmentscore::Float64; minalinmentsizefactor = 0.45 )
     aligned_query, aligned_target = NextGenSeqUtils_affine_nw_align(query.sequence, target.sequence)
 
     query_indices, target_indices = matchedindices(aligned_query, aligned_target)
 
-    return (isalignable = alignmentscore(aligned_query, aligned_target) >= minalignmentscore, chainmatch = ChainMatch(query, target, query_indices, target_indices))
+    return (isalignable = alignmentscore(aligned_query, aligned_target) >= minalignmentscore && length(aligned_query) > length(query.sequence) * minalignmentsizefactor, chainmatch = ChainMatch(query, target, query_indices, target_indices))
 end
 
 function NextGenSeqUtils_affine_nw_align(s1::String, s2::String;

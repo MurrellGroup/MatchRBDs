@@ -33,6 +33,7 @@ function alignabletargetinstances(query::ComplexInstance, target::ProteinComplex
     complexinstancematches = Vector{ComplexInstanceMatch}()
 
     chainmatches = Dict{Tuple{String, String}, NamedTuple{(:isalignable, :chainmatch), Tuple{Bool, ChainMatch}}}()
+    sizehint!(chainmatches, length(query.proteincomplex.chains) * length(target.chains))
     
     for (specialchain_index, targetspecialchain) in enumerate(target.chains)
         key = (specialchain(query).id, targetspecialchain.id)

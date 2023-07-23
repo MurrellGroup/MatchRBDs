@@ -97,11 +97,96 @@ function alignmentscore(aligned_query::String, aligned_target::String)
 end
 
 function align(query::ProteinChain, target::ProteinChain, minalignmentscore::Float64; minalignmentsizefactor = 0.45 )
-    aligned_query, aligned_target = NextGenSeqUtils_affine_nw_align(query.sequence, target.sequence)
+    aligned_query, aligned_target = fastaffinenw(query.sequence, target.sequence)
 
     query_indices, target_indices = matchedindices(aligned_query, aligned_target)
 
     return (isalignable = alignmentscore(aligned_query, aligned_target) >= minalignmentscore && length(aligned_query) > length(query.sequence) * minalignmentsizefactor, chainmatch = ChainMatch(query, target, query_indices, target_indices))
+end
+
+function fastaffinenw(s1::String, s2::String,
+    gapopen::Int = -20,
+    gapextend::Int = -2,
+    matchcost::Int = 10,
+    mismatchcost::Int = -10
+    )
+
+    inf = Int(1e6)
+
+    s1len = length(s1) # vertical
+    s2len = length(s2) # horizontal
+
+    M = zeros(Int, s1len + 1, s2len + 1)
+    IX = zeros(Int, s1len + 1, s2len + 1)
+    IY = zeros(Int, s1len + 1, s2len + 1)
+    
+    @. IX[:, 1] = gapopen + gapextend * (0:s1len)
+    IX[1, :] .= -inf
+    @. IY[1, :] = gapopen + gapextend * (0:s2len)
+    IY[:, 1] .= -inf
+
+    @. M[:, 1] = gapopen + gapextend * (0:s1len)
+    @. M[1, :] = gapopen + gapextend * (0:s2len)
+
+    @inbounds for c in 2:s2len + 1, r in 2:s1len + 1
+
+        M[r, c] = max(M[r-1, c-1], M[r-1, c-1], M[r-1, c-1]) + ifelse(s1[r-1] == s2[c-1], matchcost, mismatchcost)
+
+        IX[r, c] = max(M[r-1, c] + gapopen, IX[r-1, c] + gapextend)
+
+        IY[r, c] = max(M[r, c-1] + gapopen, IY[r, c-1] + gapextend)
+
+    end
+
+    rev_arr1 = Char[]
+    rev_arr2 = Char[]
+    sizehint!(rev_arr1, s1len + s2len)
+    sizehint!(rev_arr2, s1len + s2len)
+
+    r = s1len + 1
+    c = s2len + 1
+    cur_dp = argmax((M[r, c], IX[r, c], IY[r, c]))
+
+    @inbounds while r-1 > 0 && c-1 > 0
+        if cur_dp == 1
+            r -= 1
+            c -= 1
+            
+            push!(rev_arr1, s1[r])
+            push!(rev_arr2, s2[c])
+
+            cur_dp = argmax((M[r, c], IX[r, c], IY[r, c]))
+        elseif cur_dp == 2
+            r -= 1
+
+            push!(rev_arr1, s1[r])
+            push!(rev_arr2, '-')
+
+            cur_dp = argmax((M[r, c] + gapopen, IX[r, c] + gapextend))
+        elseif cur_dp == 3
+            c -= 1
+            
+            push!(rev_arr1, '-')
+            push!(rev_arr2, s2[c])
+
+            cur_dp = argmax((M[r, c] + gapopen, -inf, IY[r, c] + gapextend))
+        end
+    end
+
+    @inbounds while (r -= 1) > 0
+        push!(rev_arr1, s1[r])
+        push!(rev_arr2, '-')
+    end
+
+    @inbounds while (c -= 1) > 0
+        push!(rev_arr1, '-')
+        push!(rev_arr2, s2[c])
+    end
+
+    reverse!(rev_arr1)
+    reverse!(rev_arr2)
+
+    return join(rev_arr1), join(rev_arr2)
 end
 
 function NextGenSeqUtils_affine_nw_align(s1::String, s2::String;
@@ -173,7 +258,7 @@ function NextGenSeqUtils_affine_nw_align(s1::String, s2::String;
     mats = [traceM,traceIX,traceIY]
     x_i = s1len+1
     y_i = s2len+1
-    m_i = argmax([M[x_i,y_i],IX[x_i,y_i],IY[x_i,y_i]])
+    m_i = argmax((M[x_i,y_i],IX[x_i,y_i],IY[x_i,y_i]))
     while x_i-1 > 0 &&  y_i-1 > 0
         next_m_i = mats[m_i][x_i,y_i]
         if m_i == 1

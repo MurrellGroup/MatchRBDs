@@ -34,11 +34,15 @@ struct ComplexInstanceMatch
     otherchainmatches::Vector{ChainMatch}
 end
 
+allchainmatches(instancematch::ComplexInstanceMatch) = vcat([instancematch.specialchainmatch], instancematch.otherchainmatches)
+
 matchedcoords_query(chainmatch::ChainMatch) = chainmatch.query.coords[:, chainmatch.queryindices]
 matchedcoords_target(chainmatch::ChainMatch) = chainmatch.target.coords[:, chainmatch.targetindices]
 
 matchedcoords_query_otherchains(instancematch::ComplexInstanceMatch) = hcat([matchedcoords_query(matchedchain) for matchedchain in instancematch.otherchainmatches]...)
 matchedcoords_target_otherchains(instancematch::ComplexInstanceMatch) = hcat([matchedcoords_target(matchedchain) for matchedchain in instancematch.otherchainmatches]...)
+
+BioStructures.Transformation(instancematch::ComplexInstanceMatch) = BioStructures.Transformation(matchedcoords_target(instancematch.specialchainmatch), matchedcoords_query(instancematch.specialchainmatch))
 
 function rmsd(instancematch::ComplexInstanceMatch)
     

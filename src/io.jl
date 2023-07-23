@@ -78,11 +78,30 @@ function generate_dataset(PDB_entries::Vector{Tuple{String, Vector{Int}}}; outfi
                 df = vcat(df, DataFrames.DataFrame([BA]))
             end
         catch
-            @info "Not able to retrieve $(pdbid)_$(ba_number)"
+            @info "Not able to retrieve $(pdbid)_ba$(ba_number)"
         end
 
         i % iterations_per_gc == 0 && GC.gc()
         i += 1
     end
     Arrow.write(outfile, df)
+end
+
+function BioStructures.writepdb(io, complexmatch::ComplexInstanceMatch; pdb_dir = path_to_pdb)
+    biostruc = BioStructures.read(joinpath(pdb_dir, "$(complexmatch.target.proteincomplex.name).pdb"), BioStructures.PDB, structure_name = complexmatch.target.proteincomplex.name)
+
+    copytargetmatch!(biostruc, complexmatch)
+
+    BioStructures.writepdb(io, biostruc)
+end
+
+function copytargetmatch!(biostruc, complexmatch)
+
+    targetchainids = Set{String}( [chainmatch.target.id for chainmatch in allchainmatches(complexmatch)])
+
+    filter!(BioStructures.chains(biostruc)) do (chainid, chain)
+        chainid ∈ targetchainids
+    end
+
+    BioStructures.applytransform!(biostruc, Transformation)
 end

@@ -1,6 +1,6 @@
 module MatchRBDs
 
-import BioStructures, DataFrames, Arrow, Combinatorics
+import BioStructures, DataFrames, Arrow
 
 export findmatches
 

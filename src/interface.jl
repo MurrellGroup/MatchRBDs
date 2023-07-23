@@ -21,7 +21,8 @@ function findmatches(query::ComplexInstance; num_rand_kmers = 20, k = 6, path_to
 
         filter!(BAs_in_pdb) do BA
             any(BA.chains) do ch
-                any(kmer ∈ rand_kmers for kmer in kmers(ch.sequence, k))
+                hasanyof(ch.sequence, rand_kmers)
+                #any(kmer ∈ rand_kmers for kmer in kmers(ch.sequence, k))
             end
         end
     end

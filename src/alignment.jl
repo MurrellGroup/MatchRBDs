@@ -1,6 +1,6 @@
 num_alignment_queries = 0
 
-function alignabletargetinstances!(targetinstances::Vector{ComplexInstanceMatch}, chainmatches, chaininds, query, target, minimum_otherchain_alignmentscore)
+function alignabletargetinstances!(chainmatches, chaininds, query, target, minimum_otherchain_alignmentscore)
     # Base case
     if length(chaininds) == length(query.proteincomplex.chains)
         targetinstance = ComplexInstance(target, chaininds[1])
@@ -9,12 +9,11 @@ function alignabletargetinstances!(targetinstances::Vector{ComplexInstanceMatch}
         for (querychain, targetchain) in zip(otherchains(query), target.chains[chaininds[2:end]])
             push!(complexinstancematch.otherchainmatches, chainmatches[(querychain.id, targetchain.id)].chainmatch)
         end
-
-        push!(targetinstances, complexinstancematch)
-        return
+        return [complexinstancematch]
     end
         
     # DFS
+    complexinstancematches = Vector{ComplexInstanceMatch}()
     for i in setdiff(eachindex(target.chains), chaininds)
 
         targetchain = target.chains[i]
@@ -25,11 +24,14 @@ function alignabletargetinstances!(targetinstances::Vector{ComplexInstanceMatch}
         
         val.isalignable || continue
 
-        alignabletargetinstances!(targetinstances, chainmatches, vcat(chaininds, i), query, target, minimum_otherchain_alignmentscore)
+        append!(complexinstancematches, alignabletargetinstances!(chainmatches, vcat(chaininds, i), query, target, minimum_otherchain_alignmentscore))
     end
+    return complexinstancematches
 end
 
-function alignabletargetinstances!(targetinstances::Vector{ComplexInstanceMatch}, query::ComplexInstance, target::ProteinComplex; minimum_specialchain_alignmentscore = 0.3, minimum_otherchain_alignmentscore = 0.3)
+function alignabletargetinstances(query::ComplexInstance, target::ProteinComplex; minimum_specialchain_alignmentscore = 0.3, minimum_otherchain_alignmentscore = 0.3)
+    complexinstancematches = Vector{ComplexInstanceMatch}()
+
     chainmatches = Dict{Tuple{String, String}, NamedTuple{(:isalignable, :chainmatch), Tuple{Bool, ChainMatch}}}()
     
     for (specialchain_index, targetspecialchain) in enumerate(target.chains)
@@ -38,7 +40,7 @@ function alignabletargetinstances!(targetinstances::Vector{ComplexInstanceMatch}
         
         val.isalignable || continue
 
-        alignabletargetinstances!(targetinstances, chainmatches, [specialchain_index], query, target, minimum_otherchain_alignmentscore)
+        append!(complexinstancematches, alignabletargetinstances!(chainmatches, [specialchain_index], query, target, minimum_otherchain_alignmentscore))
     end
 
     # This is ugly. Shouldn't be here
@@ -46,23 +48,12 @@ function alignabletargetinstances!(targetinstances::Vector{ComplexInstanceMatch}
 
     #return [best_complexinstancematch]
     global num_alignment_queries += length(chainmatches)
+
+    return complexinstancematches
 end
 
-function alignabletargetinstances!(targetinstances::Vector{ComplexInstanceMatch}, query::ComplexInstance, targets::Vector{ProteinComplex}; minimum_specialchain_alignmentscore = 0.3, minimum_otherchain_alignmentscore = 0.3)
-    for target in targets
-        alignabletargetinstances!(targetinstances, query, target, minimum_specialchain_alignmentscore = minimum_specialchain_alignmentscore, minimum_otherchain_alignmentscore = minimum_otherchain_alignmentscore)
-    end
-end
 
-function alignabletargetinstances(query::ComplexInstance, targets::Vector{ProteinComplex}; minimum_specialchain_alignmentscore = 0.3, minimum_otherchain_alignmentscore = 0.3)
-    targetinstances = Vector{ComplexInstanceMatch}()
-
-    sizehint!(targetinstances, sum( length(t.chains) for t in targets ))
-
-    alignabletargetinstances!(targetinstances, query, targets, minimum_specialchain_alignmentscore = minimum_specialchain_alignmentscore, minimum_otherchain_alignmentscore = minimum_otherchain_alignmentscore)
-
-    return targetinstances
-end
+alignabletargetinstances(query::ComplexInstance, targets::Vector{ProteinComplex}; minimum_specialchain_alignmentscore = 0.3, minimum_otherchain_alignmentscore = 0.3) = vcat(Vector{ComplexInstanceMatch}[alignabletargetinstances(query, target, minimum_specialchain_alignmentscore = minimum_specialchain_alignmentscore, minimum_otherchain_alignmentscore = minimum_otherchain_alignmentscore) for target in targets]...)
 
 function matchedindices(aligned_queryseq::String, aligned_targetseq::String)
     queryindices = Int[]

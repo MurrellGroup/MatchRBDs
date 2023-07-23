@@ -56,7 +56,9 @@ end
 
 function alignabletargetinstances(query::ComplexInstance, targets::Vector{ProteinComplex}; minimum_specialchain_alignmentscore = 0.3, minimum_otherchain_alignmentscore = 0.3)
     targetinstances = Vector{ComplexInstanceMatch}()
-    #sizehint!()
+
+    sizehint!(targetinstances, sum( length(t.chains) for t in targets ))
+
     alignabletargetinstances!(targetinstances, query, targets, minimum_specialchain_alignmentscore = minimum_specialchain_alignmentscore, minimum_otherchain_alignmentscore = minimum_otherchain_alignmentscore)
 
     return targetinstances

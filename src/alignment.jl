@@ -4,10 +4,10 @@ function alignabletargetinstances!(chainmatches, chaininds, query, target, minim
     # Base case
     if length(chaininds) == length(query.proteincomplex.chains)
         targetinstance = ComplexInstance(target, chaininds[1])
-        complexinstancematch = ComplexInstanceMatch(query, targetinstance, chainmatches[(specialchain(query).id, specialchain(targetinstance).id)].chainmatch, Vector{ChainMatch}())
+        complexinstancematch = ComplexInstanceMatch(query, targetinstance, chainmatches[(specialchain(query).id, specialchain(targetinstance).id)].chainmatch, Vector{ChainMatch}(undef, length(chaininds) - 1))
 
-        for (querychain, targetchain) in zip(otherchains(query), target.chains[chaininds[2:end]])
-            push!(complexinstancematch.otherchainmatches, chainmatches[(querychain.id, targetchain.id)].chainmatch)
+        for (i, (querychain, targetchain)) in enumerate(zip(otherchains(query), target.chains[chaininds[2:end]]))
+            complexinstancematch.otherchainmatches[i] = chainmatches[(querychain.id, targetchain.id)].chainmatch
         end
         return [complexinstancematch]
     end
@@ -20,6 +20,7 @@ function alignabletargetinstances!(chainmatches, chaininds, query, target, minim
         querychain = otherchains(query)[length(chaininds)]
 
         key = (querychain.id, targetchain.id)
+
         val = get!(chainmatches, key, align(querychain, targetchain, minimum_otherchain_alignmentscore))
         
         val.isalignable || continue
@@ -44,10 +45,6 @@ function alignabletargetinstances(query::ComplexInstance, target::ProteinComplex
         append!(complexinstancematches, alignabletargetinstances!(chainmatches, [specialchain_index], query, target, minimum_otherchain_alignmentscore))
     end
 
-    # This is ugly. Shouldn't be here
-    #best_complexinstancematch = argmin(rmsd, complexinstancematches)
-
-    #return [best_complexinstancematch]
     global num_alignment_queries += length(chainmatches)
 
     return complexinstancematches
